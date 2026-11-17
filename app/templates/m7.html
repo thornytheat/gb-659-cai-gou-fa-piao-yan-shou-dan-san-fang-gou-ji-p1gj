@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="kpis">
+  <div class="kpi"><b>发票金额</b><strong>{{ overview.totals.invoice_amount }}</strong><small>CNY</small></div>
+  <div class="kpi"><b>已付回执</b><strong>{{ overview.totals.paid }}</strong><small>CNY</small></div>
+  <div class="kpi"><b>未付余额</b><strong>{{ overview.totals.unpaid }}</strong><small>CNY</small></div>
+  <div class="kpi"><b>转让链</b><strong>{{ overview.chains | length }}</strong><small>条</small></div>
+</section>
+<div class="grid grid--quad">
+  <section class="panel">
+    <div class="panel__head"><h2>债权人余额</h2><span class="state {{ 'state--ok' if overview.checks.debt_preserved and overview.checks.receipts_preserved else 'state--bad' }}">{{ '勾稽通过' if overview.checks.debt_preserved and overview.checks.receipts_preserved else '需复核' }}</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger">
+        <thead><tr><th>债权人</th><th>名称</th><th class="num">债权</th><th class="num">已付</th><th class="num">未付</th></tr></thead>
+        <tbody>
+        {% for row in overview.creditors %}
+          <tr><td>{{ row.creditor_code }}</td><td>{{ row.name or '—' }}</td><td class="num">{{ row.claim_amount }}</td><td class="num">{{ row.paid }}</td><td class="num">{{ row.unpaid }}</td></tr>
+        {% else %}
+          <tr><td colspan="5">暂无发票债权，请先登记发票。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel panel--evidence">
+    <div class="panel__head"><h2>原始债务</h2><span class="panel__meta">供应商不可改</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger">
+        <thead><tr><th>发票</th><th>原供应商</th><th class="num">金额</th><th class="num">未付</th></tr></thead>
+        <tbody>
+        {% for item in overview.invoices %}
+          <tr><td><a href="/receivables?invoice_no={{ item.invoice_no }}">{{ item.invoice_no }}</a></td><td>{{ item.original_supplier_code }}</td><td class="num">{{ item.amount }}</td><td class="num">{{ item.balance_equation.total_unpaid }}</td></tr>
+        {% else %}
+          <tr><td colspan="4">暂无发票。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>转让链</h2><span class="panel__meta">{{ overview.chains | length }} 条</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger">
+        <thead><tr><th>发票</th><th>链</th><th class="num">当前未付</th></tr></thead>
+        <tbody>
+        {% for chain in overview.chains %}
+          <tr>
+            <td>{{ chain.invoice_no }}</td>
+            <td>{% for step in chain.path %}{{ step.transferor_code }} → {{ step.transferee_code }} ({{ step.amount }}){% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+            <td class="num">{{ chain.unpaid }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">尚无转让。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>付款回执</h2><span class="panel__meta">收款人锁定</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger">
+        <thead><tr><th>回执</th><th>发票</th><th>收款人</th><th>原供应商</th><th class="num">金额</th></tr></thead>
+        <tbody>
+        {% for payment in overview.payments %}
+          <tr><td>{{ payment.receipt_id }}</td><td>{{ payment.invoice_no }}</td><td>{{ payment.payee_code }}</td><td>{{ payment.original_supplier_code }}</td><td class="num">{{ payment.amount }}</td></tr>
+        {% else %}
+          <tr><td colspan="5">尚无付款。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel panel--status">
+    <div class="panel__head"><h2>勾稽检查</h2><span class="panel__meta">原始债务与收款权分离</span></div>
+    <div class="panel__body">
+      <div class="legend">
+        <span>债务守恒 {{ '✓' if overview.checks.debt_preserved else '✗' }}</span>
+        <span>付款对应债权 {{ '✓' if overview.checks.payments_match_claims else '✗' }}</span>
+        <span>原供应商未改 {{ '✓' if overview.checks.original_supplier_unchanged else '✗' }}</span>
+        <span>回执收款人保留 {{ '✓' if overview.checks.receipts_preserved else '✗' }}</span>
+        <span>转让链完整 {{ '✓' if overview.checks.assignment_chain_valid else '✗' }}</span>
+      </div>
+    </div>
+  </section>
+  <section class="panel panel--ops">
+    <div class="panel__head"><h2>转让与付款</h2><span class="panel__meta">请求可恢复、重试不重复</span></div>
+    <div class="panel__body">
+      <form class="ops-form" id="assignment-form" data-kind="assignment" data-endpoint="/api/receivables/assignments">
+        <strong>转让债权</strong>
+        <label>发票<input name="invoice_no" value="{{ invoice_no or '' }}" required></label>
+        <label>转出方<input name="transferor_code" required></label>
+        <label>受让方<input name="transferee_code" required></label>
+        <label>金额<input name="amount" inputmode="decimal" required></label>
+        <input type="hidden" name="request_id">
+        <button class="btn btn--primary" type="submit">提交转让</button>
+        <output class="ops-msg"></output>
+      </form>
+      <form class="ops-form" id="payment-form" data-kind="payment" data-endpoint="/api/receivables/payments">
+        <strong>登记付款回执</strong>
+        <label>发票<input name="invoice_no" value="{{ invoice_no or '' }}" required></label>
+        <label>收款人<input name="payee_code" required></label>
+        <label>金额<input name="amount" inputmode="decimal" required></label>
+        <input type="hidden" name="request_id">
+        <button class="btn btn--primary" type="submit">登记回执</button>
+        <output class="ops-msg"></output>
+      </form>
+    </div>
+  </section>
+  <section class="panel panel--evidence">
+    <div class="panel__head"><h2>接口</h2><span class="panel__meta">M7</span></div>
+    <div class="panel__body"><div class="evidence"><b>REAL LEDGER</b><span>IDEMPOTENT</span><code>/api/receivables</code></div><pre id="result">等待运行</pre></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/receivables.js"></script>{% endblock %}

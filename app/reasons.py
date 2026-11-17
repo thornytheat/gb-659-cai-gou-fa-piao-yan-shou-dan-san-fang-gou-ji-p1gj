@@ -6,5 +6,14 @@ REASONS = {
     "TRUNCATED_INPUT": "输入尾部不完整",
     "UNKNOWN_REFERENCE": "引用对象不存在",
     "RECONCILE_DIFF": "对账不相等",
+    "NO_OPEN_BALANCE": "没有可转让或可付款的未付余额",
+    "INSUFFICIENT_BALANCE": "金额超过未付余额",
+    "CONCURRENT_MODIFICATION": "余额已被并发请求改变",
+    "SAME_CREDITOR": "转出方与受让方相同",
+    "REQUEST_CONFLICT": "请求标识与内容不一致",
+    "INVOICE_CONFLICT": "原始发票债务不可修改",
+    "RECEIPT_CONFLICT": "验收单内容冲突",
+    "UNKNOWN_INVOICE": "发票不存在",
+    "UNKNOWN_REQUEST": "请求不存在",
+    "INVALID_AMOUNT": "金额不合法",
 }
-

@@ -1,27 +1,97 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="kpis">
-  <div class="kpi"><b>含税额</b><strong>4</strong><small>条</small></div>
-  <div class="kpi"><b>通过</b><strong>2</strong><small>条</small></div>
-  <div class="kpi"><b>隔离</b><strong>2</strong><small>条</small></div>
-  <div class="kpi"><b>规则版</b><strong>1.5</strong><small>v</small></div>
+  <div class="kpi"><b>真实发票</b><strong>{{ overview.invoices | length }}</strong><small>张</small></div>
+  <div class="kpi"><b>已匹配回执</b><strong>{{ overview.invoices | map(attribute='matched_receipt_ids') | map('length') | sum }}</strong><small>张</small></div>
+  <div class="kpi"><b>债权人</b><strong>{{ creditors | length }}</strong><small>个</small></div>
+  <div class="kpi"><b>未付余额</b><strong>{{ overview.totals.unpaid }}</strong><small>CNY</small></div>
 </section>
 <div class="grid grid--quad">
   <section class="panel">
-    <div class="panel__head"><h2>多对多匹配</h2><span class="state state--ok">通过</span></div>
+    <div class="panel__head"><h2>多对多匹配</h2><span class="state {{ 'state--ok' if overview.checks.debt_preserved else 'state--bad' }}">{{ '勾稽通过' if overview.checks.debt_preserved else '需复核' }}</span></div>
     <div class="panel__body panel__body--scroll">
-      <table class="ledger"><thead><tr><th>序号</th><th>业务键</th><th>状态</th><th class="num">值</th></tr></thead>
-      <tbody>{% for row in rows %}<tr><td class="num">{{ loop.index }}</td><td>{{ row.key }}</td><td>{{ row.status }}</td><td class="num">{{ row.value }}</td></tr>{% endfor %}</tbody></table>
+      <table class="ledger">
+        <thead><tr><th>发票</th><th>货号/税率</th><th>匹配回执</th><th class="num">发票金额</th><th class="num">匹配金额</th></tr></thead>
+        <tbody>
+        {% for item in overview.invoices %}
+          <tr>
+            <td>{{ item.invoice_no }}</td>
+            <td>{{ item.sku }} / {{ item.tax_rate }}</td>
+            <td>{{ item.matched_receipt_ids | join(', ') or '—' }}</td>
+            <td class="num">{{ item.amount }}</td>
+            <td class="num">{{ item.matched_amount }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">暂无真实发票，请先在债权页面登记。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
     </div>
   </section>
   <section class="panel panel--evidence">
-    <div class="panel__head"><h2>证据</h2><span class="panel__meta">6 条</span></div>
-    <div class="panel__body"><div class="evidence"><b>RUN-659-5</b><span>LINE 6</span><code>/api/matches/solve</code></div><pre id="result">等待运行</pre></div>
+    <div class="panel__head"><h2>证据</h2><span class="panel__meta">真实数据</span></div>
+    <div class="panel__body"><div class="evidence"><b>RUN-659-5</b><span>REAL LEDGER</span><code>/api/matches/solve</code></div><pre id="result">等待运行</pre></div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>各债权人余额</h2><span class="panel__meta">{{ creditors | length }} 个</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger">
+        <thead><tr><th>债权人</th><th>未付</th><th>已付</th><th>涉及发票</th></tr></thead>
+        <tbody>
+        {% for row in creditors %}
+          <tr><td>{{ row.creditor_code }}</td><td class="num">{{ row.unpaid }}</td><td class="num">{{ row.paid }}</td><td>{{ row.invoices | join(', ') }}</td></tr>
+        {% else %}
+          <tr><td colspan="4">暂无债权余额。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>转让链</h2><span class="panel__meta">{{ overview.chains | length }} 条</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger">
+        <thead><tr><th>发票</th><th>链路</th><th>当前债权人</th><th class="num">未付</th></tr></thead>
+        <tbody>
+        {% for chain in overview.chains %}
+          <tr>
+            <td>{{ chain.invoice_no }}</td>
+            <td>{% for step in chain.path %}{{ step.transferor_code }} → {{ step.transferee_code }} ({{ step.amount }}){% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+            <td>{{ chain.creditor_code }}</td>
+            <td class="num">{{ chain.unpaid }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">尚无转让链。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>付款回执</h2><span class="panel__meta">收款人锁定</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger">
+        <thead><tr><th>回执</th><th>收款人</th><th>原供应商</th><th class="num">金额</th></tr></thead>
+        <tbody>
+        {% for payment in overview.payments %}
+          <tr><td>{{ payment.receipt_id }}</td><td>{{ payment.payee_code }}</td><td>{{ payment.original_supplier_code }}</td><td class="num">{{ payment.amount }}</td></tr>
+        {% else %}
+          <tr><td colspan="4">尚无付款回执。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
   <section class="panel panel--status">
-    <div class="panel__head"><h2>原因分布</h2><span class="panel__meta">2 类</span></div>
-    <div class="panel__body"><div class="bar"><i style="width:79%"></i></div><div class="legend"><span>采纳 4</span><span>隔离 2</span></div></div>
+    <div class="panel__head"><h2>勾稽检查</h2><span class="panel__meta">匹配算法未改动</span></div>
+    <div class="panel__body">
+      <div class="legend">
+        <span>债务守恒 {{ '✓' if overview.checks.debt_preserved else '✗' }}</span>
+        <span>回执收款人保留 {{ '✓' if overview.checks.receipts_preserved else '✗' }}</span>
+        <span>原供应商未改 {{ '✓' if overview.checks.original_supplier_unchanged else '✗' }}</span>
+        <span>转让链完整 {{ '✓' if overview.checks.assignment_chain_valid else '✗' }}</span>
+      </div>
+    </div>
   </section>
 </div>
 {% endblock %}
-
